@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+  <title>【从头开始写操作系统系列】页表以及相关的描述符详解 | 罗远航 1.0</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="description" content="在之前的文章中，我们介绍过 GDT（全局描述符表）以及一致代码段和非一致代码段，这篇文章我们再回到描述符，这次我们来以 ARM 架构为例了解一下页表描述符。
+
+在这篇文章中，我们会看到以下内容：
+
+页表是什么？
+
+一级页表的地址变换过程
+
+由一级描述符来获取二级描述符或者段地址的过程">
+<meta property="og:type" content="article">
+<meta property="og:title" content="【从头开始写操作系统系列】页表以及相关的描述符详解">
+<meta property="og:url" content="http://blog.luoyuanhang.com/2015/12/26/【从头开始写操作系统系列】页表以及相关的描述符详解/index.html">
+<meta property="og:site_name" content="罗远航 1.0">
+<meta property="og:description" content="在之前的文章中，我们介绍过 GDT（全局描述符表）以及一致代码段和非一致代码段，这篇文章我们再回到描述符，这次我们来以 ARM 架构为例了解一下页表描述符。
+
+在这篇文章中，我们会看到以下内容：
+
+页表是什么？
+
+一级页表的地址变换过程
+
+由一级描述符来获取二级描述符或者段地址的过程">
+<meta property="og:image" content="http://lyhpic-img.stor.sinaapp.com/original/22c6e8672f88eae1541780ec5c842924.png">
+<meta property="og:image" content="http://lyhpic-img.stor.sinaapp.com/original/384153ed3c113c2ca9212e7653d5c1bb.png">
+<meta property="og:image" content="http://lyhpic-img.stor.sinaapp.com/original/5cdff03300e12133aa818f3dddb455e2.png">
+<meta property="og:image" content="http://lyhpic-img.stor.sinaapp.com/original/29f93ec3a954a76cf51f5d2a884ac046.png">
+<meta property="og:image" content="http://lyhpic-img.stor.sinaapp.com/original/f867ca03e05a58371a62afc1d0c8f414.png">
+<meta property="og:image" content="http://lyhpic-img.stor.sinaapp.com/original/faa3e52d63c9a99048f0cf739a47838a.png">
+<meta property="og:image" content="http://lyhpic-img.stor.sinaapp.com/original/f6696cba74d91fcd34d8be9a4ae24004.png">
+<meta property="og:updated_time" content="2015-12-25T16:18:02.000Z">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="【从头开始写操作系统系列】页表以及相关的描述符详解">
+<meta name="twitter:description" content="在之前的文章中，我们介绍过 GDT（全局描述符表）以及一致代码段和非一致代码段，这篇文章我们再回到描述符，这次我们来以 ARM 架构为例了解一下页表描述符。
+
+在这篇文章中，我们会看到以下内容：
+
+页表是什么？
+
+一级页表的地址变换过程
+
+由一级描述符来获取二级描述符或者段地址的过程">
+  
+    <link rel="alternative" href="/rss2.xml" title="罗远航 1.0" type="application/atom+xml">
+  
+  
+  <link rel="stylesheet" href="/css/style.css" type="text/css">
+</head>
+<body>
+  <div id="container">
+    <div class="left-col">
+    <div class="overlay"></div>
+<div class="intrude-less">
+	<header id="header" class="inner">
+		<a href="/" class="profilepic">
+			
+			<img lazy-src="/head.png" class="js-avatar">
+			
+		</a>
+
+		<hgroup>
+		  <h1 class="header-author"><a href="/">远航</a></h1>
+		</hgroup>
+
+		
+		<p class="header-subtitle">我是码农，却假装是程序员。</p>
+		
+
+		
+			<div class="switch-btn">
+				<div class="icon">
+					<div class="icon-ctn">
+						<div class="icon-wrap icon-house" data-idx="0">
+							<div class="birdhouse"></div>
+							<div class="birdhouse_holes"></div>
+						</div>
+						<div class="icon-wrap icon-ribbon hide" data-idx="1">
+							<div class="ribbon"></div>
+						</div>
+						
+						
+						<div class="icon-wrap icon-me hide" data-idx="3">
+							<div class="user"></div>
+							<div class="shoulder"></div>
+						</div>
+						
+					</div>
+					
+				</div>
+				<div class="tips-box hide">
+					<div class="tips-arrow"></div>
+					<ul class="tips-inner">
+						<li>菜单</li>
+						<li>标签</li>
+						
+						
+						<li>关于我</li>
+						
+					</ul>
+				</div>
+			</div>
+		
+
+		<div class="switch-area">
+			<div class="switch-wrap">
+				<section class="switch-part switch-part1">
+					<nav class="header-menu">
+						<ul>
+						
+							<li><a href="http://www.luoyuanhang.com">主页</a></li>
+				        
+							<li><a href="/archives">所有文章</a></li>
+				        
+							<li><a href="/tags/Linux内核">Linux内核</a></li>
+				        
+							<li><a href="/tags/从头开始写操作系统">动手写操作系统</a></li>
+				        
+							<li><a href="/tags/随笔">随笔</a></li>
+				        
+						</ul>
+					</nav>
+					<nav class="header-nav">
+						<div class="social">
+							
+								<a class="github" target="_blank" href="https://github.com/luoyhang003/" title="github">github</a>
+					        
+								<a class="weibo" target="_blank" href="http://weibo.com/u/1213781672" title="weibo">weibo</a>
+					        
+								<a class="rss" target="_blank" href="/rss2.xml" title="rss">rss</a>
+					        
+								<a class="mail" target="_blank" href="mailto:luoyhang003@hotmail.com" title="mail">mail</a>
+					        
+						</div>
+					</nav>
+				</section>
+				
+				
+				<section class="switch-part switch-part2">
+					<div class="widget tagcloud" id="js-tagcloud">
+						<a href="/tags/Android/" style="font-size: 10px;">Android</a> <a href="/tags/Arduino/" style="font-size: 12px;">Arduino</a> <a href="/tags/C/" style="font-size: 10px;">C</a> <a href="/tags/Linux-内核/" style="font-size: 10px;">Linux 内核</a> <a href="/tags/Linux内核/" style="font-size: 16px;">Linux内核</a> <a href="/tags/NLP/" style="font-size: 10px;">NLP</a> <a href="/tags/从头开始写操作系统/" style="font-size: 18px;">从头开始写操作系统</a> <a href="/tags/嵌入式/" style="font-size: 14px;">嵌入式</a> <a href="/tags/开发/" style="font-size: 10px;">开发</a> <a href="/tags/开发板/" style="font-size: 10px;">开发板</a> <a href="/tags/技术/" style="font-size: 20px;">技术</a> <a href="/tags/操作系统/" style="font-size: 18px;">操作系统</a> <a href="/tags/机器学习/" style="font-size: 10px;">机器学习</a> <a href="/tags/汇编/" style="font-size: 12px;">汇编</a> <a href="/tags/算法/" style="font-size: 10px;">算法</a> <a href="/tags/随笔/" style="font-size: 10px;">随笔</a>
+					</div>
+				</section>
+				
+				
+				
+
+				
+				
+				<section class="switch-part switch-part3">
+				
+					<div id="js-aboutme">嗨，我是远航(@冰水比水冰)。现求学于 山东大学 软件工程专业。正在修行，路途漫漫。</div>
+				</section>
+				
+			</div>
+		</div>
+	</header>				
+</div>
+    </div>
+    <div class="mid-col">
+      <nav id="mobile-nav">
+  	<div class="overlay">
+  		<div class="slider-trigger"></div>
+  		<h1 class="header-author js-mobile-header hide">远航</h1>
+  	</div>
+	<div class="intrude-less">
+		<header id="header" class="inner">
+			<div class="profilepic">
+				<img lazy-src="/head.png" class="js-avatar">
+			</div>
+			<hgroup>
+			  <h1 class="header-author">远航</h1>
+			</hgroup>
+			
+			<p class="header-subtitle">我是码农，却假装是程序员。</p>
+			
+			<nav class="header-menu">
+				<ul>
+				
+					<li><a href="http://www.luoyuanhang.com">主页</a></li>
+		        
+					<li><a href="/archives">所有文章</a></li>
+		        
+					<li><a href="/tags/Linux内核">Linux内核</a></li>
+		        
+					<li><a href="/tags/从头开始写操作系统">动手写操作系统</a></li>
+		        
+					<li><a href="/tags/随笔">随笔</a></li>
+		        
+		        <div class="clearfix"></div>
+				</ul>
+			</nav>
+			<nav class="header-nav">
+				<div class="social">
+					
+						<a class="github" target="_blank" href="https://github.com/luoyhang003/" title="github">github</a>
+			        
+						<a class="weibo" target="_blank" href="http://weibo.com/u/1213781672" title="weibo">weibo</a>
+			        
+						<a class="rss" target="_blank" href="/rss2.xml" title="rss">rss</a>
+			        
+						<a class="mail" target="_blank" href="mailto:luoyhang003@hotmail.com" title="mail">mail</a>
+			        
+				</div>
+			</nav>
+		</header>				
+	</div>
+</nav>
+      <div class="body-wrap"><article id="post-【从头开始写操作系统系列】页表以及相关的描述符详解" class="article article-type-post" itemscope itemprop="blogPost">
+  
+    <div class="article-meta">
+      <a href="/2015/12/26/【从头开始写操作系统系列】页表以及相关的描述符详解/" class="article-date">
+  	<time datetime="2015-12-25T16:16:58.000Z" itemprop="datePublished">2015-12-26</time>
+</a>
+    </div>
+  
+  <div class="article-inner">
+    
+      <input type="hidden" class="isFancy" />
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="article-title" itemprop="name">
+      【从头开始写操作系统系列】页表以及相关的描述符详解
+    </h1>
+  
+
+      </header>
+      
+      <div class="article-info article-info-post">
+        
+	<div class="article-tag tagcloud">
+		<ul class="article-tag-list"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/从头开始写操作系统/">从头开始写操作系统</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/技术/">技术</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/操作系统/">操作系统</a></li></ul>
+	</div>
+
+        
+
+        <div class="clearfix"></div>
+      </div>
+      
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <blockquote>
+<p>在之前的文章中，我们介绍过 GDT（全局描述符表）以及一致代码段和非一致代码段，这篇文章我们再回到描述符，这次我们来以 ARM 架构为例了解一下页表描述符。</p>
+</blockquote>
+<p>在这篇文章中，我们会看到以下内容：</p>
+<ul>
+<li><p>页表是什么？</p>
+</li>
+<li><p>一级页表的地址变换过程</p>
+</li>
+<li><p>由一级描述符来获取二级描述符或者段地址的过程</p>
+</li>
+</ul>
+<a id="more"></a>
+<h1 id="页表">页表</h1><h2 id="页表是什么？">页表是什么？</h2><p>页表是一种特殊的数据结构，放在系统空间的页表区，存放逻辑页与物理页帧的对应关系。 每一个进程都拥有一个自己的页表，PCB表中有指针指向页表。<br>（来自<a href="http://baike.baidu.com/view/2143270.htm" target="_blank" rel="external">百度百科</a>）</p>
+<p>通俗的来讲，页表的内容就是一个描述符（关于描述符的介绍请参看该系列文章中的《实现一个 GDT》），我们可以将 GDT 理解成为一个一级描述符表，将 LDT 理解为一个二级描述符表。这篇文章我将以 ARM 体系结构为例，介绍一级页表的地址变换过程以及根据一级页表的类型来获取二级描述符表或者段的物理地址。</p>
+<h2 id="MMU_中的地址变换">MMU 中的地址变换</h2><p>ARM 系统中的虚拟空间到物理存储空间的映射是以内存块为单位进行的，即虚拟内存中的一块连续的空间被映射到物理存储空间一段连续的地址空间。</p>
+<p>ARM 支持以下几种大小的存储块：</p>
+<ul>
+<li>段(Section):大小为1MB</li>
+<li>大页(Large Pages):大小为64KB</li>
+<li>小页(Small Pages):大小为4KB</li>
+<li>微页(Tiny Pages):大小为1KB</li>
+</ul>
+<p>在页表中，每一个地址变换条目实际上记录了一个虚拟空间的存储块的基地址与物理空间存储块的对应关系，根据存储块的大小，会有多种不同的地址变换。</p>
+<p>在 ARM 中，MMU 实现虚拟地址到物理地址的映射是通过两级页表来实现的（以段为单位的地址变换是通过一级页表实现的）</p>
+<h2 id="ARM_中与_MMU操作相关的寄存器">ARM 中与 MMU操作相关的寄存器</h2><table>
+<thead>
+<tr>
+<th style="text-align:center">寄存器</th>
+<th style="text-align:left">作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center">C1</td>
+<td style="text-align:left">配置 MMU 中的一些操作</td>
+</tr>
+<tr>
+<td style="text-align:center">C2</td>
+<td style="text-align:left">保存页表的基地址</td>
+</tr>
+<tr>
+<td style="text-align:center">C3</td>
+<td style="text-align:left">设置域的访问控制属性</td>
+</tr>
+<tr>
+<td style="text-align:center">C4</td>
+<td style="text-align:left">保留</td>
+</tr>
+<tr>
+<td style="text-align:center">C5</td>
+<td style="text-align:left">内存访问失效状态指示</td>
+</tr>
+<tr>
+<td style="text-align:center">C6</td>
+<td style="text-align:left">内存访问失效时失效的地址</td>
+</tr>
+<tr>
+<td style="text-align:center">C8</td>
+<td style="text-align:left">控制与清除 TLB 内容相关操作</td>
+</tr>
+<tr>
+<td style="text-align:center">C10</td>
+<td style="text-align:left">控制与锁定 TLB 内容相关操作</td>
+</tr>
+</tbody>
+</table>
+<h1 id="一级页表">一级页表</h1><h2 id="如何获得一级页表的地址？">如何获得一级页表的地址？</h2><p>从上表中我们可以看到 C2中保存了页表的基地址，由此，我们可以看到下图：</p>
+<p><img src="http://lyhpic-img.stor.sinaapp.com/original/22c6e8672f88eae1541780ec5c842924.png" alt="image"></p>
+<p><strong>一级页表地址 =  C2寄存器的高18位 + 虚拟地址的高22位 + 00 （共32位）</strong></p>
+<h2 id="一级描述符">一级描述符</h2><p>我们得到了一级页表的地址，对应地址空间的内容就是一级描述符。</p>
+<p>一级描述符分为以下类型：</p>
+<ul>
+<li>粗粒度页表描述符</li>
+</ul>
+<p><img src="http://lyhpic-img.stor.sinaapp.com/original/384153ed3c113c2ca9212e7653d5c1bb.png" alt="image"></p>
+<ul>
+<li>段描述符</li>
+</ul>
+<p><img src="http://lyhpic-img.stor.sinaapp.com/original/5cdff03300e12133aa818f3dddb455e2.png" alt="image"></p>
+<ul>
+<li>细粒度页表描述符</li>
+</ul>
+<p><img src="http://lyhpic-img.stor.sinaapp.com/original/29f93ec3a954a76cf51f5d2a884ac046.png" alt="image"></p>
+<p>从以上三幅图中我们可以看到，不同类型的描述符是由描述符的<strong>最低2位</strong>决定的，分别为：</p>
+<table>
+<thead>
+<tr>
+<th style="text-align:center">类型</th>
+<th style="text-align:center">低1位</th>
+<th style="text-align:center">低0位</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:center">粗粒度页表描述符</td>
+<td style="text-align:center">0</td>
+<td style="text-align:center">1</td>
+</tr>
+<tr>
+<td style="text-align:center">段描述符</td>
+<td style="text-align:center">1</td>
+<td style="text-align:center">0</td>
+</tr>
+<tr>
+<td style="text-align:center">细粒度页表描述符</td>
+<td style="text-align:center">1</td>
+<td style="text-align:center">1</td>
+</tr>
+<tr>
+<td style="text-align:center">无效</td>
+<td style="text-align:center">0</td>
+<td style="text-align:center">0</td>
+</tr>
+</tbody>
+</table>
+<h1 id="获得二级描述符表或者段地址过程">获得二级描述符表或者段地址过程</h1><h2 id="由粗粒度页表描述符获得二级描述符表">由粗粒度页表描述符获得二级描述符表</h2><p><img src="http://lyhpic-img.stor.sinaapp.com/original/f867ca03e05a58371a62afc1d0c8f414.png" alt="image"></p>
+<p>从图中我们可以清楚的看到由粗粒度描述符表得到二级描述符表地址的过程：</p>
+<p><strong>二级描述符表地址 = 粗粒度描述符表高22位 + 虚拟地址[19:12]位 + 00 (共32位)</strong></p>
+<h2 id="由细粒度页表描述符获得二级描述符表">由细粒度页表描述符获得二级描述符表</h2><p><img src="http://lyhpic-img.stor.sinaapp.com/original/faa3e52d63c9a99048f0cf739a47838a.png" alt="image"></p>
+<p>从图中我们可以清楚的看到由细粒度描述符表得到二级描述符表地址的过程：</p>
+<p><strong>二级描述符表地址 = 粗粒度描述符表高20位 + 虚拟地址[19:10]位 + 00 (共32位)</strong></p>
+<h2 id="由段描述符表描述符获得段的物理地址">由段描述符表描述符获得段的物理地址</h2><p><img src="http://lyhpic-img.stor.sinaapp.com/original/f6696cba74d91fcd34d8be9a4ae24004.png" alt="image"></p>
+<p>从图中我们可以清楚的看到由段描述符表描述符获得段的物理地址的过程：</p>
+<p><strong>段物理地址 = 段描述符高12位 + 虚拟地址低20位</strong></p>
+<h1 id="总结">总结</h1><p>在这篇文章中，我们加深了之前对描述符的理解，同时对描述符的作用做了更直接的解释，对于页表也进行了介绍。这篇文章中我们以 ARM 体系结构为例讲解了二级页表的工作，其实，按照同样的道理我们也可以设计出三级页表以及更多级的页表。</p>
+<hr>
+<blockquote>
+<p>本文的版权归作者 <a href="http://www.luoyuanhang.com" target="_blank" rel="external">罗远航</a> 所有，采用 <a href="http://creativecommons.org/licenses/by-nc/3.0/" target="_blank" rel="external">Attribution-NonCommercial 3.0 License</a>。任何人可以进行转载、分享，但不可在未经允许的情况下用于商业用途；转载请注明出处。感谢配合！</p>
+</blockquote>
+
+      
+    </div>
+    
+  </div>
+  
+    
+<nav id="article-nav">
+  
+  
+    <a href="/2015/12/10/Ashmem-对-Android-内存分配与共享的增强/" id="article-nav-older" class="article-nav-link-wrap">
+      <div class="article-nav-title">Ashmem 对 Android 内存分配与共享的增强</div>
+      <strong class="article-nav-caption">></strong>
+    </a>
+  
+</nav>
+
+  
+</article>
+
+
+<div class="share">
+	<!-- JiaThis Button BEGIN -->
+	<div class="jiathis_style">
+		<span class="jiathis_txt">分享到：</span>
+		<a class="jiathis_button_tsina"></a>
+		<a class="jiathis_button_cqq"></a>
+		<a class="jiathis_button_douban"></a>
+		<a class="jiathis_button_weixin"></a>
+		<a class="jiathis_button_tumblr"></a>
+		<a href="http://www.jiathis.com/share" class="jiathis jiathis_txt jtico jtico_jiathis" target="_blank"></a>
+	</div>
+	<script type="text/javascript" src="http://v3.jiathis.com/code/jia.js?uid=1405949716054953" charset="utf-8"></script>
+	<!-- JiaThis Button END -->
+</div>
+
+
+
+<div class="duoshuo">
+	<!-- 多说评论框 start -->
+	<div class="ds-thread" data-thread-key="【从头开始写操作系统系列】页表以及相关的描述符详解" data-title="【从头开始写操作系统系列】页表以及相关的描述符详解" data-url="http://blog.luoyuanhang.com/2015/12/26/【从头开始写操作系统系列】页表以及相关的描述符详解/"></div>
+	<!-- 多说评论框 end -->
+	<!-- 多说公共JS代码 start (一个网页只需插入一次) -->
+	<script type="text/javascript">
+	var duoshuoQuery = {short_name:"bloglyh"};
+	(function() {
+		var ds = document.createElement('script');
+		ds.type = 'text/javascript';ds.async = true;
+		ds.src = (document.location.protocol == 'https:' ? 'https:' : 'http:') + '//static.duoshuo.com/embed.js';
+		ds.charset = 'UTF-8';
+		(document.getElementsByTagName('head')[0] 
+		 || document.getElementsByTagName('body')[0]).appendChild(ds);
+	})();
+	</script>
+	<!-- 多说公共JS代码 end -->
+</div>
+
+
+
+
+</div>
+      <footer id="footer">
+  <div class="outer">
+    <div id="footer-info">
+    	<div class="footer-left">
+    		&copy; 2015 远航
+    	</div>
+      	<div class="footer-right">
+      		<a href="http://hexo.io/" target="_blank">Hexo</a>  Theme <a href="https://github.com/litten/hexo-theme-yilia" target="_blank">Yilia</a> by Litten
+      	</div>
+    </div>
+  </div>
+</footer>
+    </div>
+    
+  <link rel="stylesheet" href="/fancybox/jquery.fancybox.css" type="text/css">
+
+
+<script>
+	var yiliaConfig = {
+		fancybox: true,
+		mathjax: true,
+		animate: true,
+		isHome: false,
+		isPost: true,
+		isArchive: false,
+		isTag: false,
+		isCategory: false,
+		open_in_new: true
+	}
+</script>
+
+<script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "//hm.baidu.com/hm.js?0458911b7b78e99efc3094c783ab5b48";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+<script src="http://7.url.cn/edu/jslib/comb/require-2.1.6,jquery-1.9.1.min.js" type="text/javascript"></script>
+<script src="/js/main.js" type="text/javascript"></script>
+
+
+
+
+
+
+<script type="text/x-mathjax-config">
+MathJax.Hub.Config({
+    tex2jax: {
+        inlineMath: [ ['$','$'], ["\\(","\\)"]  ],
+        processEscapes: true,
+        skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+    }
+});
+
+MathJax.Hub.Queue(function() {
+    var all = MathJax.Hub.getAllJax(), i;
+    for(i=0; i < all.length; i += 1) {
+        all[i].SourceElement().parentNode.className += ' has-jax';                 
+    }       
+});
+</script>
+
+<script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML">
+</script>
+
+
+  </div>
+</body>
+</html>
